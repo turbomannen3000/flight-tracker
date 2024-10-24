@@ -6,11 +6,51 @@
     <title>Flight Tracker</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
     <style>
-        #map { height: 80vh; width: 100%; }
-        #input-container { margin: 20px; }
-        #flight-info { margin: 20px; padding: 10px; border: 1px solid #ccc; background: #f9f9f9; }
-        .airplane-icon {
-            transform-origin: center; /* Gör så att rotationen sker från mitten av ikonen */
+        body {
+            font-size: 14px; /* Minska teckenstorleken */
+            margin: 0; /* Ta bort standardmarginaler */
+            padding: 0; /* Ta bort standardpadding */
+        }
+
+        #map { height: 50vh; width: 100%; } /* Minska kartans höjd */
+        
+        #input-container {
+            margin: 10px; /* Minska marginalerna */
+            display: flex;
+            flex-direction: column;
+            align-items: center; /* Centrera elementen */
+        }
+
+        #flight-info {
+            margin: 10px; /* Minska marginalerna */
+            padding: 5px; /* Minska padding */
+            border: 1px solid #ccc;
+            background: #f9f9f9;
+            height: auto; /* Låt informationen ta den plats den behöver */
+        }
+
+        button {
+            font-size: 14px; /* Öka knapptstorleken */
+            padding: 10px; /* Öka padding */
+            cursor: pointer; /* Ändra muspekaren till pekare */
+        }
+
+        input {
+            font-size: 14px; /* Öka input-fältets storlek */
+            padding: 5px; /* Minska padding */
+            width: 90%; /* Gör input-fältet mer brett */
+        }
+
+        @media (max-width: 300px) { /* Specifik för Apple Watch */
+            #input-container {
+                margin: 5px; /* Minska marginalerna ännu mer */
+            }
+            #map {
+                height: 40vh; /* Minska kartans höjd */
+            }
+            #flight-info {
+                font-size: 12px; /* Justera textstorleken för information */
+            }
         }
     </style>
 </head>
@@ -31,7 +71,6 @@
         var map = L.map('map').setView([59.3293, 18.0686], 6); // Centered on Stockholm with zoom level 6
         var polyline; // Global polyline to update
         var marker; // Global marker for current position
-        var destinationCoordinates; // För att lagra destinationens koordinater
 
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 18,
@@ -61,7 +100,6 @@
                         var icao24 = matchingStates[0][0]; // ICAO24 är den första posten i den matchande staten
                         updateFlightInfo(matchingStates[0]); // Uppdatera flyginformation
                         fetchTrack(icao24);
-                        fetchDestinationInfo(callsign); // Hämta destination från ADSBDB API
                     } else {
                         alert("Flight not found or no data available for this callsign.");
                         document.getElementById('info').innerHTML = ''; // Rensa tidigare information
@@ -91,111 +129,59 @@
                     var coordinates = latestTrack ? [[latestTrack[1], latestTrack[2]]] : []; // Ta den senaste positionen
 
                     if (coordinates.length > 0) {
-                        // Rensa tidigare polyline om den finns
                         if (polyline) {
-                            map.removeLayer(polyline);
+                            map.removeLayer(polyline); // Ta bort tidigare polyline om det finns
                         }
 
-                        // Skapa en ny polyline med endast den aktuella rutten och lägg till den på kartan
+                        // Lägg till en polyline för att visa flygrutten
                         polyline = L.polyline(coordinates, { color: 'blue' }).addTo(map);
 
-                        // Centrera kartan till den aktuella positionen och zooma ut
-                        map.setView(coordinates[0], 6); // Zooma ut till nivå 6
+                        // Lägg till en markering för flygplanets position
+                        addMarker(latestTrack);
 
-                        // Hämta den senaste positionen och skapa en markering med riktning
-                        updateMarker(coordinates[0]); // Passa kursen
-                    } else {
-                        alert("No valid position data for this flight.");
+                        // Zooma inte in så mycket efter att ha skrivit in ett callsign
+                        map.setView(coordinates[0], 6); // Sätt zoomnivån till 6 istället för att passa in rutten
                     }
-                } else {
-                    alert("No track data available for this flight.");
                 }
             })
-            .catch(error => console.error('Error fetching flight track:', error));
+            .catch(error => console.error('Error fetching flight track data:', error));
         }
 
-        function fetchDestinationInfo(callsign) {
-            // Hämta destinationinformation från ADSBDB API
-            fetch(`https://api.adsbdb.com/v0/callsign/${callsign}`)
-            .then(response => response.json())
-            .then(data => {
-                if (data.response && data.response.flightroute && data.response.flightroute.destination) {
-                    var destination = data.response.flightroute.destination;
-                    destinationCoordinates = [destination.latitude, destination.longitude]; // Spara destinationens koordinater
-                    var destinationInfo = `
-                        <strong>Destination:</strong> ${destination.name} (${destination.iata_code})<br>
-                        <strong>Latitude:</strong> ${destination.latitude}<br>
-                        <strong>Longitude:</strong> ${destination.longitude}<br>
-                    `;
-                    document.getElementById('info').innerHTML += destinationInfo; // Lägg till destinationen
-                } else {
-                    console.error("Destination information not found:", data);
-                }
-            })
-            .catch(error => console.error('Error fetching destination info:', error));
-        }
+        function addMarker(latestTrack) {
+            var coordinates = [latestTrack[1], latestTrack[2]]; // [lat, lon]
+            var direction = latestTrack[3]; // Använd riktning om det finns
 
-        function updateFlightInfo(state) {
-            var infoText = `
-                <strong>Callsign:</strong> ${state[1] || 'N/A'}<br>
-                <strong>ICAO24:</strong> ${state[0]}<br>
-                <strong>Origin Country:</strong> ${state[2] || 'N/A'}<br>
-                <strong>Last Contact:</strong> ${state[4] ? new Date(state[4] * 1000).toLocaleString() : 'N/A'}<br>
-                <strong>Longitude:</strong> ${state[5] !== null ? state[5].toFixed(5) : 'N/A'}<br>
-                <strong>Latitude:</strong> ${state[6] !== null ? state[6].toFixed(5) : 'N/A'}<br>
-                <strong>Altitude:</strong> ${state[7] !== null ? state[7].toFixed(2) + ' m' : 'N/A'}<br>
-                <strong>Velocity:</strong> ${state[9] !== null ? state[9].toFixed(2) + ' m/s' : 'N/A'}
-            `;
-            document.getElementById('info').innerHTML = infoText; // Uppdatera info-delen
-        }
-
-        function updateMarker(coordinates) {
             // Ta bort tidigare markering om den finns
             if (marker) {
                 map.removeLayer(marker);
             }
 
-            // Beräkna riktningen mot destinationen
-            if (destinationCoordinates) {
-                var angle = calculateDirection(coordinates, destinationCoordinates); // Beräkna riktningen
+            // Skapa en pil-ikon med hjälp av SVG
+            var iconHtml = `
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icon-tabler-arrow-right">
+                    <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                    <path d="M5 12h14m-7 -7l7 7l-7 7" />
+                </svg>
+            `;
 
-                // Skapa en SVG-ikon som representerar en pil
-                var iconHtml = `
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icon-tabler-arrow-right" style="transform: rotate(${angle}deg);"> <!-- Rotera pilen -->
-                        <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-                        <path d="M5 12h14m-7 -7l7 7l-7 7" />
-                    </svg>
-                `;
+            // Skapa en divIcon med den roterade SVG
+            var airplaneIcon = L.divIcon({
+                className: 'airplane-icon',
+                html: iconHtml,
+                iconSize: [24, 24], // Ställ in storleken på ikonen
+                iconAnchor: [12, 12], // Mittpunkten för ikonen
+                popupAnchor: [0, -12], // Popupens ankare
+            });
 
-                // Skapa en divIcon med den roterade SVG
-                var airplaneIcon = L.divIcon({
-                    className: 'airplane-icon',
-                    html: iconHtml,
-                    iconSize: [24, 24], // Ställ in storleken på ikonen
-                    iconAnchor: [12, 12], // Mittpunkten för ikonen
-                });
-
-                // Lägg till markeringen på kartan med den riktade ikonen
-                marker = L.marker(coordinates, { icon: airplaneIcon }).addTo(map);
-            }
+            // Lägg till markeringen på kartan med den riktade ikonen
+            marker = L.marker(coordinates, { icon: airplaneIcon }).addTo(map);
         }
 
-        function calculateDirection(startCoords, destCoords) {
-            // Beräkna riktningen (vinkel) mellan två punkter
-            var lat1 = startCoords[0];
-            var lon1 = startCoords[1];
-            var lat2 = destCoords[0];
-            var lon2 = destCoords[1];
-
-            // Beräkna delta
-            var deltaLon = lon2 - lon1;
-            var y = Math.sin(deltaLon) * Math.cos(lat2);
-            var x = Math.cos(lat1) * Math.sin(lat2) -
-                    Math.sin(lat1) * Math.cos(lat2) * Math.cos(deltaLon);
-            var angle = Math.atan2(y, x) * (180 / Math.PI); // Konvertera till grader
-
-            // Justera vinkeln så att den är positiv
-            return (angle + 360) % 360; 
+        function updateFlightInfo(state) {
+            var callsign = state[1]; // callsign är på index 1
+            var origin = state[2]; // origin är på index 2
+            var destination = state[3]; // destination är på index 3
+            document.getElementById('info').innerHTML = `Flight: ${callsign} | Origin: ${origin} | Destination: ${destination}`;
         }
     </script>
 </body>
